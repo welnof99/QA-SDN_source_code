@@ -1,4 +1,4 @@
-# MAS-QA-SDN: reproduction package
+# QA-SDN: reproduction package
 
 Code, data, figures and an executable notebook for the article
 
