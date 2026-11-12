@@ -101,3 +101,6 @@ Cite the article and this archive. The archive DOI is [PLACEHOLDER: Zenodo DOI].
 [PLACEHOLDER: funding statement]
 [PLACEHOLDER: competing interests statement]
 [PLACEHOLDER: author contributions]
+
+## Extensions (k=6, hard priority penalty, emulation)
+See `code/extensions/README.md`. The release code in `code/` is unchanged.

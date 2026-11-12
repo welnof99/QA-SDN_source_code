@@ -1,0 +1,20 @@
+--- code/exp.py	2026-11-09 13:33:31.681476609 +0700
++++ outputs/release_extension_variants/code/exp_var.py	2026-11-11 10:49:08.530417235 +0700
+@@ -5,7 +5,7 @@
+ from scipy import stats
+ from scipy.optimize import milp, LinearConstraint, Bounds
+ from scipy.sparse import lil_matrix
+-import masqa_lib as L
++import masqa_var as L
+ 
+ OUT = "results"
+ import os; os.makedirs(OUT, exist_ok=True)
+@@ -133,7 +133,7 @@
+             arc_rows[l][j] = fidx[fid]["demand"]
+     for l in range(nL):
+         if arc_rows[l]:
+-            A_rows.append(arc_rows[l]); lb.append(0.0); ub.append(L.LINK_CAP)
++            A_rows.append(arc_rows[l]); lb.append(0.0); ub.append(L.CAP[l])
+     A = lil_matrix((len(A_rows), len(cols)))
+     for i, row in enumerate(A_rows):
+         for j, v in row.items(): A[i, j] = v

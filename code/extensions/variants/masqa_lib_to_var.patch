@@ -1,0 +1,129 @@
+--- code/masqa_lib.py	2026-11-09 13:33:31.681476609 +0700
++++ outputs/release_extension_variants/code/masqa_var.py	2026-11-11 10:49:08.530328078 +0700
+@@ -62,6 +62,20 @@
+     return dict(links=links, delay=np.array(delay), hosts=hosts, E=E, A=A, C=C)
+ 
+ TOPO = build_fat_tree(42)
++CAP = np.full(96, LINK_CAP)          # per-arc capacity (Mbps); homogeneous by default
++BW_WEIGHTED = False                   # priority-weighted served-bandwidth term (H_bw)
++
++def set_hetero_core(cap_core=25.0):
++    """Agg-core arcs get capacity cap_core; all other arcs keep LINK_CAP."""
++    global CAP
++    CAP = np.full(96, LINK_CAP)
++    for (u, v), l in TOPO["links"].items():
++        if u.startswith("c") or v.startswith("c"):
++            CAP[l] = cap_core
++
++def set_homogeneous():
++    global CAP
++    CAP = np.full(96, LINK_CAP)
+ print("links:", len(TOPO["links"]), "| hosts:", len(TOPO["hosts"]))
+ 
+ def link_id(topo, u, v):
+@@ -148,11 +162,15 @@
+         lin = {xv: 1.0 for xv in xs}; lin[y] = -1.0
+         q.add_sq(lin, 0.0, lam["A"])
+         # H_bw: unserved bandwidth (d/Dtot)(1 - y) -> linear term in y
+-        q.add(y, y, -lam["b"] * f["demand"] / Dtot)
++        if BW_WEIGHTED:
++            Dw = sum(PRIO_W[k] * class_counts[k] for k in class_counts)
++            q.add(y, y, -lam["b"] * f["w"] * f["demand"] / Dw)
++        else:
++            q.add(y, y, -lam["b"] * f["demand"] / Dtot)
+     # H_cap (hard, utilization units) with binary slack: (sum d x + sum δ2^k s - cap')/c, cap' = c - bg
+     used_links = [l for l in range(nL) if link_terms[l]]
+     for l in used_links:
+-        c = LINK_CAP
++        c = CAP[l]
+         delta = c / (2 ** SLACK_BITS - 1)
+         lin = {}
+         for v, a in link_terms[l].items():
+@@ -163,8 +181,8 @@
+     # H_bal: |E|·Var(u) = Σ u_l^2 - (1/|E|)(Σ u_l)^2, with u_l = (bg_l + Σ d x)/c
+     total_lin = {}; total_c0 = 0.0
+     for l in range(nL):
+-        lin = {v: a / LINK_CAP for v, a in link_terms[l].items()}
+-        c0 = bg_load[l] / LINK_CAP
++        lin = {v: a / CAP[l] for v, a in link_terms[l].items()}
++        c0 = bg_load[l] / CAP[l]
+         if lin or c0:
+             q.add_sq(lin, c0, lam["l"])
+         for v, a in lin.items(): total_lin[v] = total_lin.get(v, 0.0) + a
+@@ -218,7 +236,7 @@
+     load = {}
+     def path_links(f, p): return f["paths"][p]
+     def fits(f, p, load):
+-        return all(load.get(l, 0.0) + f["demand"] <= LINK_CAP + 1e-9 for l in path_links(f, p))
++        return all(load.get(l, 0.0) + f["demand"] <= CAP[l] + 1e-9 for l in path_links(f, p))
+     def add(f, p, load):
+         for l in path_links(f, p): load[l] = load.get(l, 0.0) + f["demand"]
+     # pass 1: resolve overloads (flows already assigned by pods)
+@@ -230,7 +248,7 @@
+     for f in order:
+         p = final.get(f["id"])
+         if p is None: continue
+-        if any(load.get(l, 0.0) > LINK_CAP + 1e-9 for l in path_links(f, p)):
++        if any(load.get(l, 0.0) > CAP[l] + 1e-9 for l in path_links(f, p)):
+             for l in path_links(f, p): load[l] -= f["demand"]
+             alt = None
+             for p2 in range(len(f["paths"])):
+@@ -258,7 +276,7 @@
+         for l in f["paths"][assign[f["id"]]]: load[l] = load.get(l, 0.0) + f["demand"]
+     served = {}
+     for f in flows:
+-        over = any(load[l] > LINK_CAP + 1e-9 for l in f["paths"][assign[f["id"]]])
++        over = any(load[l] > CAP[l] + 1e-9 for l in f["paths"][assign[f["id"]]])
+         served[f["id"]] = None if over else assign[f["id"]]
+     return served
+ 
+@@ -268,7 +286,7 @@
+     load = {}; served = {}
+     for f in flows:
+         p = int(rng.integers(len(f["paths"])))
+-        if all(load.get(l, 0.0) + f["demand"] <= LINK_CAP + 1e-9 for l in f["paths"][p]):
++        if all(load.get(l, 0.0) + f["demand"] <= CAP[l] + 1e-9 for l in f["paths"][p]):
+             for l in f["paths"][p]: load[l] = load.get(l, 0.0) + f["demand"]
+             served[f["id"]] = p
+         else:
+@@ -291,7 +309,7 @@
+     for f in flows:
+         p = assign.get(f["id"])
+         if p is None: out[f["id"]] = None; continue
+-        over = any(load[l] > LINK_CAP + 1e-9 for l in f["paths"][p])
++        over = any(load[l] > CAP[l] + 1e-9 for l in f["paths"][p])
+         out[f["id"]] = None if over else p
+     return out
+ 
+@@ -341,7 +359,7 @@
+     ll = np.zeros(len(TOPO["links"]))
+     for f in srv:
+         for l in f["paths"][served[f["id"]]]: ll[l] += f["demand"]
+-    assert ll.max() <= LINK_CAP + 1e-6, "served set violates capacity"
++    assert np.all(ll <= CAP + 1e-6), "served set violates capacity"
+     return dict(PL_flow=PL, BWL=BWL, latency_ms=latency, throughput_mbps=dem, JFI=jfi, CoV=cov)
+ 
+ # ===== CELL: experiment runner =====
+@@ -386,3 +404,22 @@
+     "balance-focus":         dict(A=10, c=10, l=5, t=3, b=5, f=1),
+     "no-fairness":           dict(A=10, c=10, l=5, t=3, b=2, f=0),
+ }
++
++
++def least_loaded(flows):
++    """Capacity-aware greedy: flows in priority order (EF, AF, BE; larger demand first). Each flow takes the
++       candidate path whose most-utilised arc (after adding the flow) is least utilised, among paths that fit."""
++    order = sorted(flows, key=lambda f: (-f["w"], -f["demand"]))
++    load = np.zeros(len(TOPO["links"])); out = {f["id"]: None for f in flows}
++    for f in order:
++        best = None; best_u = None
++        for p, pl in enumerate(f["paths"]):
++            new = load[list(pl)] + f["demand"]
++            if np.all(new <= CAP[list(pl)] + 1e-9):
++                u = float(np.max(new / CAP[list(pl)]))
++                if best_u is None or u < best_u - 1e-12:
++                    best, best_u = p, u
++        if best is not None:
++            out[f["id"]] = best
++            load[list(f["paths"][best])] += f["demand"]
++    return out
