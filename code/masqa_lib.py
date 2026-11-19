@@ -18,7 +18,7 @@ SCENARIOS = {  # name: (N_F, D_total in Mbps)  — from Table 3 of the manuscrip
     "S2": (100, 1278.3),
     "S3": (150, 1920.0),
 }
-EVAL_SEEDS = list(range(42, 52))          # evaluation seeds (n = 10)
+EVAL_SEEDS = list(range(42, 72))          # evaluation seeds (n = 30, as in the manuscript)
 VALID_SEEDS = list(range(100, 105))       # separate validation seeds for tuning λ
 LINK_CAP = 50.0                           # Mbps per directed arc (full-duplex physical link)
 SERVER_CAP = 50.0
@@ -186,14 +186,21 @@ def build_qubo(flows_sub, topo, bg_load, Dtot, class_counts, lam=LAMBDA):
     return q
 
 # ===== CELL: solver wrapper (OpenJij SQA / SA) =====
-def solve(q, method, reads, sweeps, seed):
+# Validation-selected SQA settings (manuscript Section 3.5): beta = 0.5, Gamma = 1.0, P = B["trotter"].
+SQA_BETA, SQA_GAMMA = 0.5, 1.0
+# SA: sa_beta=None uses the OpenJij default schedule ("SA-mono-m"); (0.1, 10.0) is the tuned schedule.
+def solve(q, method, reads, sweeps, seed, sqa_beta=SQA_BETA, sqa_gamma=SQA_GAMMA, sa_beta=None):
     if method == "sqa":
         sampler = oj.SQASampler()
         ss = sampler.sample_qubo(q.Q, num_reads=reads, num_sweeps=sweeps, trotter=B["trotter"],
-                                 beta=5.0, gamma=3.0, seed=seed)
+                                 beta=sqa_beta, gamma=sqa_gamma, seed=seed)
     else:
         sampler = oj.SASampler()
-        ss = sampler.sample_qubo(q.Q, num_reads=reads, num_sweeps=sweeps, seed=seed)
+        if sa_beta is None:
+            ss = sampler.sample_qubo(q.Q, num_reads=reads, num_sweeps=sweeps, seed=seed)
+        else:
+            ss = sampler.sample_qubo(q.Q, num_reads=reads, num_sweeps=sweeps, seed=seed,
+                                     beta_min=sa_beta[0], beta_max=sa_beta[1])
     best = ss.first.sample
     return {int(k): int(v) for k, v in best.items()}
 

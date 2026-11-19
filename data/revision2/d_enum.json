@@ -1,0 +1,9 @@
+{
+  "variables": 19,
+  "states": 524288,
+  "slack_bits_total": 12,
+  "global_min": -20.0,
+  "best_xy_energy": -20.0,
+  "lowest_feasible_energy": -20.0,
+  "feasible_choices": 12
+}

@@ -1,0 +1,10 @@
+# Verified in the sandbox used for the second-round revision (Python 3.13.18)
+numpy==2.5.3
+scipy==1.18.1
+openjij==0.12.2
+pandas==3.0.5
+dwave-tabu==0.5.0
+numba==0.68.1
+matplotlib==3.11.2
+# Emulation (Mininet 2.3.0-1.1, iperf3 3.16) is a system package, not a pip package.
+# HiGHS is bundled with SciPy 1.18.1; the exact HiGHS release is not recorded here.

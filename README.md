@@ -23,6 +23,11 @@ The package reproduces every table and figure in the article's Results (Sections
 | `figures/` | All 13 article figures, each as PNG (300 dpi) and PDF. |
 | `manuscript/MAS-QA-SDN_IJIES_submission.pdf` | Manuscript PDF. |
 | `requirements.txt` | Python dependencies. |
+| `requirements-lock.txt` | Exact versions used for the second-round revision (Python 3.13.18). |
+| `code/revision2/` | Scripts for the second-round revision: energy check, admission-bonus calibration, equal-work control, timing, paired statistics. See its README. |
+| `data/revision2/` | Results of the second-round revision and paired statistics (`revision_comparisons.csv`). |
+| `data/seed_manifest.csv` | Seeds covered by every data file (N = 300 is missing seed 66). |
+| `notebooks/revision2_reproduction.ipynb` | Light reproduction notebook for the second-round analyses. |
 | `CITATION.cff`, `.zenodo.json` | Citation and archive metadata. |
 | `LICENSE` | MIT license for code. |
 | `LICENSE-DATA` | CC BY 4.0 license for data, figures and manuscript. |
@@ -75,7 +80,7 @@ pip install -r requirements.txt
    ```
    The regenerated CSV files should match `data/` for the same seeds. The timing columns will differ with hardware (see `data/README.md`).
 
-Random seeds are fixed in the code. Evaluation seeds (42–71 for the main protocol) are disjoint from tuning seeds (100–114).
+Random seeds are fixed in the code. Evaluation seeds (42–71 for the main protocol) are disjoint from tuning seeds (100–104 for the second round; 100–114 for the first round).
 
 ## Notes on the data
 
@@ -102,5 +107,11 @@ Cite the article and this archive. The archive DOI is [PLACEHOLDER: Zenodo DOI].
 [PLACEHOLDER: competing interests statement]
 [PLACEHOLDER: author contributions]
 
+## Changes in the second-round release
+- `code/masqa_lib.py`: the SQA defaults are now the validation-selected settings used in the manuscript (beta = 0.5, Gamma = 1.0; `solve()` takes `sqa_beta`, `sqa_gamma` and `sa_beta` as parameters). Before this change the file hard-coded beta = 5 and Gamma = 3. The default evaluation seeds are now 42–71 (30 seeds).
+- Verified: `run_mas` on S1, seed 42 reproduces the archived MAS-QA result (PL_flow = 26.0, BWL = 32.9926).
+- `code/revision2/` and `data/revision2/` contain all second-round runs. Each script writes to `data/revision2/` relative to the repository.
+- Raw and repaired assignments of each run are not included in this release.
+
 ## Extensions (k=6, hard priority penalty, emulation)
-See `code/extensions/README.md`. The release code in `code/` is unchanged.
+See `code/extensions/README.md`. The extension scripts use the release library as before.

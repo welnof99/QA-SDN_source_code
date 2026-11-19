@@ -1,0 +1,19 @@
+scenario,comparison,n,mean_diff,ci_low,ci_high,p_t,p_wilcoxon,mean_A,mean_B,p_bonf_m6
+S1,SQA-SA (baseline weights),30,-0.2,-1.49,1.09,0.7537,0.7912,20.07,20.27,1.0
+S1,SQA-SA (calibrated mu=20),30,1.0,0.27,1.73,0.0087,0.014,19.07,18.07,0.0522
+S1,SA: mu=20 minus baseline,30,-2.2,-3.32,-1.08,0.0004,0.0009,18.07,20.27,0.0024
+S1,MAS-QA: mu=20 minus baseline,30,-0.87,-1.67,-0.07,0.0349,0.0352,19.6,20.47,0.2094
+S1,MAS-QA minus SQA equal-work (baseline),30,1.07,-0.56,2.69,0.1901,0.1976,20.47,19.4,1.0
+S1,MAS-QA minus SQA 5000 (baseline),30,0.4,-0.94,1.74,0.5451,0.3747,20.47,20.07,1.0
+S2,SQA-SA (baseline weights),30,-1.63,-2.65,-0.61,0.0028,0.0036,40.87,42.5,0.0168
+S2,SQA-SA (calibrated mu=20),30,0.47,-0.39,1.33,0.2756,0.2807,38.8,38.33,1.0
+S2,SA: mu=20 minus baseline,30,-4.17,-5.28,-3.05,0.0,0.0,38.33,42.5,0.0
+S2,MAS-QA: mu=20 minus baseline,30,-1.8,-2.65,-0.95,0.0002,0.0004,39.5,41.3,0.0012
+S2,MAS-QA minus SQA equal-work (baseline),30,0.17,-0.75,1.08,0.7122,0.6912,41.3,41.13,1.0
+S2,MAS-QA minus SQA 5000 (baseline),30,0.43,-0.75,1.62,0.46,0.4817,41.3,40.87,1.0
+S3,SQA-SA (baseline weights),30,-2.36,-3.18,-1.53,0.0,0.0,53.44,55.8,0.0
+S3,SQA-SA (calibrated mu=20),30,0.69,0.15,1.23,0.0144,0.0154,51.29,50.6,0.0864
+S3,SA: mu=20 minus baseline,30,-5.2,-5.99,-4.41,0.0,0.0,50.6,55.8,0.0
+S3,MAS-QA: mu=20 minus baseline,30,-1.67,-2.28,-1.05,0.0,0.0001,52.31,53.98,0.0
+S3,MAS-QA minus SQA equal-work (baseline),30,0.04,-0.69,0.78,0.9026,0.9808,53.98,53.93,1.0
+S3,MAS-QA minus SQA 5000 (baseline),30,0.53,-0.22,1.28,0.1562,0.1814,53.98,53.44,0.9372
