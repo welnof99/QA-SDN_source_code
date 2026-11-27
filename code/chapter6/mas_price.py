@@ -78,7 +78,7 @@ def mu_analytic(f, u, cc, lam, eps=0.1, variant="load"):
 
 
 # ---------------------------------------------------------------- QUBO agen pod
-def build_pod_qubo(sub, bg_load, cap_local, price, Dtot, cc, lam, mu):
+def build_pod_qubo(sub, bg_load, cap_local, price, Dtot, cc, lam, mu, prev=None, kappa=0.0):
     """QUBO satu agen pod.
     bg_load  : beban arc dari pod lain / tahap terkunci (array NL), dipakai di suku balance.
     cap_local: kapasitas efektif arc lokal (array NL) = c - beban terkunci.
@@ -100,6 +100,12 @@ def build_pod_qubo(sub, bg_load, cap_local, price, Dtot, cc, lam, mu):
         lin = {xv: 1.0 for xv in xs}; lin[y] = -1.0
         q.add_sq(lin, 0.0, lam["A"])
         q.add(y, y, -lam["b"] * f["demand"] / Dtot - mu.get(f["id"], 0.0))
+        # suku proksimal kappa*(z - z_prev)^2 = kappa*z*(1 - 2 z_prev) + konstanta (linear, tanpa kopling baru)
+        if kappa and prev is not None and f["id"] in prev:
+            pp = prev[f["id"]]
+            q.add(y, y, kappa * (1 - 2 * (pp is not None)))
+            for p, xv in enumerate(xs):
+                q.add(xv, xv, kappa * (1 - 2 * (pp == p)))
     # kapasitas dengan slack: hanya arc lokal
     delta = C / (2 ** SLACK_BITS - 1)
     for l in LOCAL_ARCS:
@@ -148,10 +154,16 @@ def _load_of(flows, assign):
 # ---------------------------------------------------------------- loop harga (6.3)
 def price_loop(flows, seed, Dtot, cc, lam, solver="sqa", prm=None, pod_sweeps=None, rho0=10.0, T_max=8,
                tol=0.02, eps_pi=1e-3, mu_mode="analytic", mu_const=20.0, eps_mu=0.1,
-               locked_load=None, use_price=True, stage_tag=0):
+               locked_load=None, use_price=True, stage_tag=0,
+               kappa=0.0, alpha=1.0, fixed_seed=False, gauss_seidel=False):
     """Koordinasi harga antar-agen pod. Mengembalikan (assign_terbaik, info, trace).
     Keluaran terbaik = putaran dengan jumlah flow diterima terbanyak setelah repair
-    (deterministik, dapat dihitung oleh controller)."""
+    (deterministik, dapat dihitung oleh controller); info['last_assign'] = putaran terakhir.
+    Stabilisasi (Subbab 6.5.7):
+      kappa        : bobot suku proksimal terhadap keputusan putaran sebelumnya (inersia)
+      alpha        : rata-rata primal beban, load_avg <- (1-alpha) load_avg + alpha load (1 = tanpa rata-rata)
+      fixed_seed   : benih sampler sama di setiap putaran (mengurangi derau antar-putaran)
+      gauss_seidel : pod diselesaikan berurutan dan langsung melihat keputusan baru pod sebelumnya"""
     prm = dict(prm or R.TUNED)
     if pod_sweeps:
         prm["pod_sweeps"] = int(pod_sweeps)
@@ -161,6 +173,7 @@ def price_loop(flows, seed, Dtot, cc, lam, solver="sqa", prm=None, pod_sweeps=No
     price = np.zeros(NL)
     assign = {}
     load_prev = locked.copy()
+    load_avg = None
     best, best_n, trace, work = None, -1, [], 0.0
     t_seq = t_par = 0.0
     prev_x = None
@@ -173,22 +186,31 @@ def price_loop(flows, seed, Dtot, cc, lam, solver="sqa", prm=None, pod_sweeps=No
         else:
             mu = {}
         new_assign, pod_times = {}, []
+        cur = dict(assign)                  # keputusan terkini (diperbarui per pod pada Gauss-Seidel)
         for qd in pods:
             sub = [f for f in flows if f["pod"] == qd]
-            own = _load_of(sub, assign) if assign else np.zeros(NL)
-            bg = load_prev - own            # beban pod lain + beban terkunci
+            if gauss_seidel and cur:
+                tot = _load_of(flows, cur) + locked
+            else:
+                tot = load_prev
+            own = _load_of(sub, cur) if cur else np.zeros(NL)
+            bg = tot - own                  # beban pod lain + beban terkunci
             t0 = time.perf_counter()
-            qb = build_pod_qubo(sub, bg, cap_eff, price if use_price else np.zeros(NL), Dtot, cc, lam, mu)
-            s = seed * 1000 + stage_tag * 100 + t * 10 + qd
+            qb = build_pod_qubo(sub, bg, cap_eff, price if use_price else np.zeros(NL), Dtot, cc, lam, mu,
+                                prev=(assign if t > 0 else None), kappa=kappa)
+            s = seed * 1000 + stage_tag * 100 + (0 if fixed_seed else t * 10) + qd
             if solver == "sqa":
                 smp = R.sample_sqa(qb, prm["pod_reads"], prm["pod_sweeps"], s, prm["sqa_beta"], prm["sqa_gamma"])
                 work += len(qb.idx) * R.P * prm["pod_sweeps"] * prm["pod_reads"]
             else:
                 smp = R.sample_sa(qb, prm["pod_reads"], prm["pod_sweeps"], s, prm["sa_bmin"], prm["sa_bmax"])
                 work += len(qb.idx) * prm["pod_sweeps"] * prm["pod_reads"]
-            new_assign.update(L.decode(qb, smp, sub))
+            dec = L.decode(qb, smp, sub)
+            new_assign.update(dec)
+            if gauss_seidel:
+                cur.update(dec)
             pod_times.append(time.perf_counter() - t0)
-        t_seq += sum(pod_times); t_par += max(pod_times)
+        t_seq += sum(pod_times); t_par += sum(pod_times) if gauss_seidel else max(pod_times)
         assign = new_assign
         load = _load_of(flows, assign) + locked
         # ukuran konvergensi
@@ -205,11 +227,12 @@ def price_loop(flows, seed, Dtot, cc, lam, solver="sqa", prm=None, pod_sweeps=No
                           price_max=float(price[list(SHARED_ARCS)].max())))
         if n_adm > best_n:
             best_n, best = n_adm, dict(assign)
-        # pembaruan harga subgradien
+        # pembaruan harga subgradien pada beban rata-rata primal
+        load_avg = load.copy() if load_avg is None else (1 - alpha) * load_avg + alpha * load
         rho = rho0 / math.sqrt(t + 1)
         new_price = price.copy()
         for l in SHARED_ARCS:
-            new_price[l] = max(0.0, price[l] + rho * (load[l] - C) / C)
+            new_price[l] = max(0.0, price[l] + rho * (load_avg[l] - C) / C)
         dprice = np.linalg.norm(new_price - price) / max(np.linalg.norm(price), 1e-9)
         price = new_price
         load_prev = load
@@ -217,7 +240,7 @@ def price_loop(flows, seed, Dtot, cc, lam, solver="sqa", prm=None, pod_sweeps=No
             pass
         elif over <= tol or (t > 0 and dprice < eps_pi):
             break
-    info = dict(rounds=len(trace), work=work, pods_seq_s=t_seq, pods_par_s=t_par)
+    info = dict(rounds=len(trace), work=work, pods_seq_s=t_seq, pods_par_s=t_par, last_assign=dict(assign))
     return best, info, trace
 
 
@@ -262,6 +285,7 @@ def run_mas_price(flows, seed, Dtot, cc, lam=None, **kw):
     best, info, trace = price_loop(flows, seed, Dtot, cc, lam, **kw)
     t1 = time.perf_counter()
     final = L.coordinate(best, flows)
+    info["last_final"] = L.coordinate(info.pop("last_assign"), flows)
     info.update(coord_s=time.perf_counter() - t1, total_s=time.perf_counter() - t0)
     return final, info, trace
 
@@ -276,6 +300,7 @@ def run_mas_price_lex(flows, seed, Dtot, cc, lam=None, **kw):
         if not fk:
             continue
         best, info, trace = price_loop(fk, seed, Dtot, cc, lam, locked_load=locked, stage_tag=si + 1, **kw)
+        info.pop("last_assign", None)
         rep = repair(fk, best, locked)
         assign_all.update(rep)
         locked = locked + _load_of(fk, rep)
@@ -285,3 +310,17 @@ def run_mas_price_lex(flows, seed, Dtot, cc, lam=None, **kw):
                 pods_seq_s=sum(i["pods_seq_s"] for i in infos), pods_par_s=sum(i["pods_par_s"] for i in infos),
                 total_s=time.perf_counter() - t0)
     return final, info, traces
+
+
+def run_v2_restarts(flows, seed, Dtot, cc, K, lam=None, mu=0.0, prm=None):
+    """Kontrol: MAS-QA-v2 (tanpa koordinasi) dengan K restart independen, ambil yang menerima flow
+    terbanyak setelah repair. Memisahkan efek koordinasi dari efek 'terbaik dari beberapa sampel'."""
+    lam = dict(lam or R.LAM); prm = prm or R.TUNED
+    best, best_n, work, t_seq = None, -1, 0.0, 0.0
+    for k in range(K):
+        fin, inf = R.pod_solve(flows, seed + 100000 * k, Dtot, cc, lam, mu, "sqa", prm)
+        n = sum(v is not None for v in fin.values())
+        work += inf["pod_work"]; t_seq += inf["pod_sequential_s"]
+        if n > best_n:
+            best_n, best = n, fin
+    return best, dict(rounds=K, work=work, pods_seq_s=t_seq)
