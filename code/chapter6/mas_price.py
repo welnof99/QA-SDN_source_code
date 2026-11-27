@@ -34,11 +34,19 @@ CLASSES = ["EF", "AF", "BE"]
 def _is_up(u, v):
     return (u[0] == "h" and v[0] == "e") or (u[0] == "e" and v[0] == "a") or (u[0] == "a" and v[0] == "c")
 
-UP = np.zeros(NL, dtype=bool)
-for (u, v), lid in L.TOPO["links"].items():
-    UP[lid] = _is_up(u, v)
-LOCAL_ARCS = set(np.where(UP)[0].tolist())      # 48 arc naik
-SHARED_ARCS = set(np.where(~UP)[0].tolist())    # 48 arc turun
+def set_topology(topo):
+    """Pasang topologi (k = 4 bawaan, atau Fat-Tree k dari extensions/k6_priority_emulation/fattree_k.py).
+    Memperbarui L.TOPO (dipakai metrics), jumlah arc, dan partisi arc lokal/bersama."""
+    global NL, UP, LOCAL_ARCS, SHARED_ARCS
+    L.TOPO = topo
+    NL = len(topo["links"])
+    UP = np.zeros(NL, dtype=bool)
+    for (u, v), lid in topo["links"].items():
+        UP[lid] = _is_up(u, v)
+    LOCAL_ARCS = set(np.where(UP)[0].tolist())      # arc naik
+    SHARED_ARCS = set(np.where(~UP)[0].tolist())    # arc turun
+
+set_topology(L.TOPO)
 
 
 def check_arc_partition(flows):
@@ -318,9 +326,25 @@ def run_v2_restarts(flows, seed, Dtot, cc, K, lam=None, mu=0.0, prm=None):
     lam = dict(lam or R.LAM); prm = prm or R.TUNED
     best, best_n, work, t_seq = None, -1, 0.0, 0.0
     for k in range(K):
-        fin, inf = R.pod_solve(flows, seed + 100000 * k, Dtot, cc, lam, mu, "sqa", prm)
+        fin, inf = run_v2_k(flows, seed + 100000 * k, Dtot, cc, lam, mu, prm)
         n = sum(v is not None for v in fin.values())
-        work += inf["pod_work"]; t_seq += inf["pod_sequential_s"]
+        work += inf["work"]; t_seq += inf["pods_seq_s"]
         if n > best_n:
             best_n, best = n, fin
     return best, dict(rounds=K, work=work, pods_seq_s=t_seq)
+
+
+def run_v2_k(flows, seed, Dtot, cc, lam=None, mu=0.0, prm=None):
+    """MAS-QA-v2 (dekomposisi pod sumber, b_l = 0, tanpa koordinasi) untuk sembarang jumlah pod.
+    Identik dengan r2lib.pod_solve pada k = 4."""
+    lam = dict(lam or R.LAM); prm = prm or R.TUNED
+    assign, work, t_seq, t_max = {}, 0.0, 0.0, 0.0
+    for qd in sorted({f["pod"] for f in flows}):
+        sub = [f for f in flows if f["pod"] == qd]
+        t0 = time.perf_counter()
+        qb = R.add_bonus(L.build_qubo(sub, L.TOPO, np.zeros(NL), Dtot, cc, lam), sub, mu)
+        smp = R.sample_sqa(qb, prm["pod_reads"], prm["pod_sweeps"], seed * 10 + qd, prm["sqa_beta"], prm["sqa_gamma"])
+        work += len(qb.idx) * R.P * prm["pod_sweeps"] * prm["pod_reads"]
+        assign.update(L.decode(qb, smp, sub))
+        dt = time.perf_counter() - t0; t_seq += dt; t_max = max(t_max, dt)
+    return L.coordinate(assign, flows), dict(rounds=1, work=work, pods_seq_s=t_seq, pods_par_s=t_max)
