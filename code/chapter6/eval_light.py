@@ -98,7 +98,7 @@ else:
     gen = lambda N, D, s: F.gen_traffic_k(T, N, D, s)
 M.set_topology(T)
 
-OUT = os.path.join(HERE, "..", "..", "data", "chapter6"); os.makedirs(OUT, exist_ok=True)
+OUT = os.environ.get("EVAL_OUT", os.path.join(HERE, "..", "..", "data", "chapter6")); os.makedirs(OUT, exist_ok=True)
 ROWS = os.path.join(OUT, f"eval_light_{TIER}.csv")
 done = set()
 if os.path.exists(ROWS):
