@@ -397,5 +397,19 @@ H3("3.9.3 Integrasi *Quantum Annealing* ke SDN dan MAS");
 P("Integrasi *quantum annealing* ke dalam arsitektur SDN dan MAS dilakukan dengan menempatkan MAS-QA sebagai modul optimasi pada lapisan aplikasi/kontrol SDN (Gambar 3.6). Pengendali mengumpulkan status jaringan, yaitu permintaan flow, kelas layanan, topologi, dan kapasitas arc. Flow dikelompokkan menurut pod sumber, dan setiap agen pod membangun serta menyelesaikan QUBO lokalnya dengan SQA; karena subproblem saling independen, agen dapat dijalankan paralel. Keputusan semua agen kemudian diteruskan ke *repair* bersama yang menegakkan kapasitas setiap arc dan urutan prioritas, sehingga koordinasi global terjadi pada satu titik yang deterministik. Hasil akhirnya berupa himpunan flow yang diterima beserta jalurnya, yang dipasang sebagai aturan penerusan pada lapisan infrastruktur. Pada penelitian ini, pemasangan aturan diverifikasi dengan rute statis pada emulasi Mininet; integrasi dengan pengendali OpenFlow atau P4 berada di luar cakupan.");
 FIGURE("gambar3_6_integrasi.png", "Integrasi MAS-QA ke dalam arsitektur SDN");
 
-REFS();
-D.save(process.argv[2] || "BAB_I-III.docx", "BAB I–III");
+// MODE: "all" = BAB I-III + VII + pustaka; "13" = BAB I-III saja; "7" = BAB VII + pustaka (penomoran sitasi tetap)
+const MODE = process.env.MODE || "all";
+const OUT = process.argv[2] || "BAB_I-III.docx";
+if (MODE === "13") {
+  require("fs").writeFileSync(OUT.replace(/\.docx$/, ".order.json"), JSON.stringify(D.order));
+  D.save(OUT, "BAB I–III");
+} else if (MODE === "7") {
+  D.body.length = 0;
+  require("./bab7")(D, true);
+  REFS();
+  D.save(OUT, "BAB VII dan Daftar Pustaka");
+} else {
+  require("./bab7")(D, false);
+  REFS();
+  D.save(OUT, "BAB I–III dan VII");
+}
