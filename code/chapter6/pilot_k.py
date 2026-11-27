@@ -27,6 +27,9 @@ CONFIGS = {
     "piacak":    ("pi acak rho0=10", dict(kind="pi", T_max=6, rho0=10.0, pod_sweeps=250)),
     "pistabil":  ("pi stabil rho0=40", dict(kind="pi", T_max=6, rho0=40.0, pod_sweeps=250, **STAB)),
     "lex":       ("pi-Lex stabil rho0=40", dict(kind="lex", T_max=4, rho0=40.0, pod_sweeps=250, **STAB)),
+    # 6.5.10: langkah konstan berskala median mu_f, 10 putaran x 150 sweeps (kerja setara 6 x 250)
+    "adapt3":    ("pi adaptif 3x mu (10x150)", dict(kind="pi", T_max=10, pod_sweeps=150, step="const", rho_mu_mult=3.0, **STAB)),
+    "adapt10":   ("pi adaptif 10x mu (10x150)", dict(kind="pi", T_max=10, pod_sweeps=150, step="const", rho_mu_mult=10.0, **STAB)),
 }
 OUT = os.path.join(HERE, "..", "..", "data", "chapter6"); os.makedirs(OUT, exist_ok=True)
 ROWS, TRACE = os.path.join(OUT, f"pilot_k{K}_rows.csv"), os.path.join(OUT, f"pilot_k{K}_trace.csv")

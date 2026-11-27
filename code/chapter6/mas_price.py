@@ -163,7 +163,8 @@ def _load_of(flows, assign):
 def price_loop(flows, seed, Dtot, cc, lam, solver="sqa", prm=None, pod_sweeps=None, rho0=10.0, T_max=8,
                tol=0.02, eps_pi=1e-3, mu_mode="analytic", mu_const=20.0, eps_mu=0.1,
                locked_load=None, use_price=True, stage_tag=0,
-               kappa=0.0, alpha=1.0, fixed_seed=False, gauss_seidel=False):
+               kappa=0.0, alpha=1.0, fixed_seed=False, gauss_seidel=False,
+               step="decay", rho_mu_mult=None):
     """Koordinasi harga antar-agen pod. Mengembalikan (assign_terbaik, info, trace).
     Keluaran terbaik = putaran dengan jumlah flow diterima terbanyak setelah repair
     (deterministik, dapat dihitung oleh controller); info['last_assign'] = putaran terakhir.
@@ -171,7 +172,12 @@ def price_loop(flows, seed, Dtot, cc, lam, solver="sqa", prm=None, pod_sweeps=No
       kappa        : bobot suku proksimal terhadap keputusan putaran sebelumnya (inersia)
       alpha        : rata-rata primal beban, load_avg <- (1-alpha) load_avg + alpha load (1 = tanpa rata-rata)
       fixed_seed   : benih sampler sama di setiap putaran (mengurangi derau antar-putaran)
-      gauss_seidel : pod diselesaikan berurutan dan langsung melihat keputusan baru pod sebelumnya"""
+      gauss_seidel : pod diselesaikan berurutan dan langsung melihat keputusan baru pod sebelumnya
+    Langkah harga (Subbab 6.5.10):
+      step='decay' : rho_t = rho0 / sqrt(t+1)   (varian awal)
+      step='const' : rho_t = rho0               (tanpa peluruhan)
+      rho_mu_mult  : bila diisi, rho0 = rho_mu_mult * median(mu_f putaran 0), agar harga sebanding
+                     dengan reward admisi yang harus dikalahkan untuk menolak flow"""
     prm = dict(prm or R.TUNED)
     if pod_sweeps:
         prm["pod_sweeps"] = int(pod_sweeps)
@@ -237,7 +243,9 @@ def price_loop(flows, seed, Dtot, cc, lam, solver="sqa", prm=None, pod_sweeps=No
             best_n, best = n_adm, dict(assign)
         # pembaruan harga subgradien pada beban rata-rata primal
         load_avg = load.copy() if load_avg is None else (1 - alpha) * load_avg + alpha * load
-        rho = rho0 / math.sqrt(t + 1)
+        if t == 0 and rho_mu_mult is not None and mu:
+            rho0 = rho_mu_mult * float(np.median(list(mu.values())))
+        rho = rho0 if step == "const" else rho0 / math.sqrt(t + 1)
         new_price = price.copy()
         for l in SHARED_ARCS:
             new_price[l] = max(0.0, price[l] + rho * (load_avg[l] - C) / C)
@@ -248,7 +256,7 @@ def price_loop(flows, seed, Dtot, cc, lam, solver="sqa", prm=None, pod_sweeps=No
             pass
         elif over <= tol or (t > 0 and dprice < eps_pi):
             break
-    info = dict(rounds=len(trace), work=work, pods_seq_s=t_seq, pods_par_s=t_par, last_assign=dict(assign))
+    info = dict(rounds=len(trace), work=work, pods_seq_s=t_seq, pods_par_s=t_par, last_assign=dict(assign), rho0_used=rho0)
     return best, info, trace
 
 
