@@ -146,13 +146,15 @@ def _load_of(flows, assign):
 
 
 # ---------------------------------------------------------------- loop harga (6.3)
-def price_loop(flows, seed, Dtot, cc, lam, solver="sqa", prm=None, rho0=10.0, T_max=8,
+def price_loop(flows, seed, Dtot, cc, lam, solver="sqa", prm=None, pod_sweeps=None, rho0=10.0, T_max=8,
                tol=0.02, eps_pi=1e-3, mu_mode="analytic", mu_const=20.0, eps_mu=0.1,
                locked_load=None, use_price=True, stage_tag=0):
     """Koordinasi harga antar-agen pod. Mengembalikan (assign_terbaik, info, trace).
     Keluaran terbaik = putaran dengan jumlah flow diterima terbanyak setelah repair
     (deterministik, dapat dihitung oleh controller)."""
-    prm = prm or R.TUNED
+    prm = dict(prm or R.TUNED)
+    if pod_sweeps:
+        prm["pod_sweeps"] = int(pod_sweeps)
     locked = np.zeros(NL) if locked_load is None else locked_load
     cap_eff = np.maximum(C - locked, 0.0)
     pods = sorted({f["pod"] for f in flows})
@@ -197,7 +199,7 @@ def price_loop(flows, seed, Dtot, cc, lam, solver="sqa", prm=None, rho0=10.0, T_
         # repair untuk memilih putaran terbaik (tidak dipakai untuk memperbarui harga)
         rep = repair(flows, assign, locked)
         n_adm = sum(v is not None for v in rep.values())
-        trace.append(dict(round=t, max_overload_shared=over, pct_changed=changed,
+        trace.append(dict(stage=("ALL" if stage_tag == 0 else CLASSES[stage_tag - 1]), round=t, max_overload_shared=over, pct_changed=changed,
                           raw_admitted=sum(v is not None for v in assign.values()), repaired_admitted=n_adm,
                           price_mean=float(price[list(SHARED_ARCS)].mean()),
                           price_max=float(price[list(SHARED_ARCS)].max())))
@@ -220,16 +222,37 @@ def price_loop(flows, seed, Dtot, cc, lam, solver="sqa", prm=None, rho0=10.0, T_
 
 
 def repair(flows, assign, locked=None):
-    """coordinate() rilis, dengan beban terkunci (tahap Lex) diperhitungkan sebagai flow semu."""
+    """Aturan coordinate() rilis (urutan prioritas, pass 1 reroute/drop, pass 2 greedy fill),
+    dengan beban terkunci tahap sebelumnya sebagai beban awal yang TIDAK dapat dibuang.
+    Tanpa beban terkunci, hasilnya identik dengan L.coordinate()."""
     if locked is None or not locked.any():
         return L.coordinate(assign, flows)
-    ghosts = []
-    for l in np.where(locked > 0)[0]:
-        ghosts.append(dict(id=-1 - int(l), demand=float(locked[l]), w=99, cls="LOCK",
-                           paths=[[int(l)]], pdelay=[0.0], pod=-1))
-    a = dict(assign); a.update({g["id"]: 0 for g in ghosts})
-    out = L.coordinate(a, ghosts + flows)
-    return {f["id"]: out[f["id"]] for f in flows}
+    order = sorted(flows, key=lambda f: (-f["w"], -f["demand"]))
+    load = {int(l): float(locked[l]) for l in np.where(locked > 0)[0]}
+    fits = lambda f, p: all(load.get(l, 0.0) + f["demand"] <= C + 1e-9 for l in f["paths"][p])
+    def add(f, p, s=1.0):
+        for l in f["paths"][p]:
+            load[l] = load.get(l, 0.0) + s * f["demand"]
+    final = {f["id"]: assign.get(f["id"]) for f in flows}
+    for f in order:
+        if final[f["id"]] is not None:
+            add(f, final[f["id"]])
+    for f in order:
+        p = final[f["id"]]
+        if p is None:
+            continue
+        if any(load.get(l, 0.0) > C + 1e-9 for l in f["paths"][p]):
+            add(f, p, -1.0)
+            alt = next((p2 for p2 in range(len(f["paths"])) if p2 != p and fits(f, p2)), None)
+            final[f["id"]] = alt
+            if alt is not None:
+                add(f, alt)
+    for f in order:
+        if final[f["id"]] is None:
+            p2 = next((p2 for p2 in range(len(f["paths"])) if fits(f, p2)), None)
+            if p2 is not None:
+                add(f, p2); final[f["id"]] = p2
+    return final
 
 
 # ---------------------------------------------------------------- metode lengkap
@@ -256,7 +279,7 @@ def run_mas_price_lex(flows, seed, Dtot, cc, lam=None, **kw):
         rep = repair(fk, best, locked)
         assign_all.update(rep)
         locked = locked + _load_of(fk, rep)
-        infos.append(info); traces += [dict(stage=k, **r) for r in trace]
+        infos.append(info); traces += trace
     final = L.coordinate(assign_all, flows)
     info = dict(rounds=sum(i["rounds"] for i in infos), work=sum(i["work"] for i in infos),
                 pods_seq_s=sum(i["pods_seq_s"] for i in infos), pods_par_s=sum(i["pods_par_s"] for i in infos),

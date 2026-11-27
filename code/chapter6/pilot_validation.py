@@ -23,6 +23,8 @@ CONFIGS = {
     "MAS-QA-pi rho0=10":      dict(kind="pi", T_max=8, rho0=10.0, mu_mode="analytic"),
     "MAS-QA-pi rho0=40":      dict(kind="pi", T_max=8, rho0=40.0, mu_mode="analytic"),
     "MAS-QA-pi rho0=10 mu=20": dict(kind="pi", T_max=8, rho0=10.0, mu_mode="const", mu_const=20.0),
+    # kerja setara MAS-QA-v2: QUBO pod lebih kecil (tanpa slack arc bersama), 4 putaran x 250 sweeps
+    "MAS-QA-pi rho0=10 work-matched": dict(kind="pi", T_max=4, rho0=10.0, mu_mode="analytic", pod_sweeps=250),
     "MAS-QA-pi-Lex rho0=10":  dict(kind="lex", T_max=5, rho0=10.0, mu_mode="analytic"),
 }
 
